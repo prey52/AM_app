@@ -39,34 +39,33 @@ class MainActivity : ComponentActivity() {
 
         // Konfiguracja OSM
         Configuration.getInstance().load(this, this.getSharedPreferences("osm_pref", MODE_PRIVATE))
-
-        Log.d("MainActivity", "Application started.")
-
-        fetchAndCacheTours()
-        checkLocationPermission()
-
-        // Wczytaj trasy z pamięci podręcznej
-        val cachedTours = readCachedTours()
-        if (cachedTours != null) {
-            Log.d("Cache", "Loaded ${cachedTours.size} tours from cache.")
-        } else {
-            Log.d("Cache", "No cached tours found.")
+        mapView = MapView(this).apply {
+            setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
+            controller.setZoom(15.0)
+            controller.setCenter(GeoPoint(49.803455, 19.048866)) // Przykładowa lokalizacja
         }
+
+        checkLocationPermission()
 
         setContent {
             Map_OSMTheme {
-                MainScreen(cachedTours ?: emptyList()) // Przekaż trasy do ekranu głównego
+                MainScreen(mapView, listOf(
+                    Tour(1, "Centra handlowe", emptyList()),
+                    Tour(2, "UBB główne budynki", emptyList()),
+                    Tour(3, "UBB pobliskie żabki", emptyList())
+                ))
             }
         }
+
     }
 
     private fun checkLocationPermission() {
         if (ActivityCompat.checkSelfPermission(
                 this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            requestPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
         } else {
             setupMapWithLocation()
         }
@@ -84,74 +83,24 @@ class MainActivity : ComponentActivity() {
 
     private fun setupMapWithLocation() {
         lifecycleScope.launch(Dispatchers.Main) {
-            if (!this@MainActivity::mapView.isInitialized) {
-                mapView = MapView(this@MainActivity).apply {
-                    setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
-                    controller.setZoom(15.0)
-                    controller.setCenter(GeoPoint(49.803455, 19.048866)) // Przykładowy punkt
-                }
-            }
-
-            // Dodaj lokalizację użytkownika
             locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this@MainActivity), mapView).apply {
-                enableMyLocation() // Włącz aktualizację lokalizacji
-                enableFollowLocation() // Kamera będzie podążać za użytkownikiem
+                enableMyLocation()
+                enableFollowLocation()
             }
-
             mapView.overlays.add(locationOverlay)
-        }
-    }
-
-    private fun fetchAndCacheTours() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            Log.d("Network", "Fetching tours from the REST API...")
-            try {
-                val response = ApiClient.service.getTours().execute()
-                if (response.isSuccessful) {
-                    val tours = response.body() ?: emptyList()
-                    Log.d("Network", "Tours fetched successfully: ${tours.size} tours retrieved.")
-
-                    val cacheFile = File(cacheDir, "tours_cache.json")
-                    cacheFile.writeText(Gson().toJson(tours))
-                    Log.d("Cache", "Tours cached successfully at ${cacheFile.absolutePath}.")
-                } else {
-                    Log.e("Network", "Error fetching tours: ${response.code()} - ${response.message()}")
-                }
-            } catch (e: Exception) {
-                Log.e("Network", "Exception occurred while fetching tours: ${e.message}")
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun readCachedTours(): List<Tour>? {
-        val cacheFile = File(cacheDir, "tours_cache.json")
-        return if (cacheFile.exists()) {
-            val cachedData = cacheFile.readText()
-            Log.d("Cache", "Cached data read successfully: $cachedData")
-            Gson().fromJson(cachedData, Array<Tour>::class.java).toList()
-        } else {
-            Log.d("Cache", "No cache file found at ${cacheFile.absolutePath}.")
-            null
         }
     }
 }
 
+
 @Composable
-fun MainScreen(tours: List<Tour>) {
+fun MainScreen(mapView: MapView, tours: List<Tour> = emptyList()) {
     var showDialog by remember { mutableStateOf(false) }
-    val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Mapa OSM
+        // Wyświetl mapę OSM
         AndroidView(
-            factory = {
-                MapView(context).apply {
-                    setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
-                    controller.setZoom(15.0)
-                    controller.setCenter(GeoPoint(49.803455, 19.048866)) // Przykładowy punkt
-                }
-            },
+            factory = { mapView },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -173,6 +122,7 @@ fun MainScreen(tours: List<Tour>) {
     }
 }
 
+
 @Composable
 fun MyDialog(onDismiss: () -> Unit, tours: List<Tour>) {
     AlertDialog(
@@ -180,11 +130,12 @@ fun MyDialog(onDismiss: () -> Unit, tours: List<Tour>) {
         title = { Text(text = "Trasy") },
         text = {
             Column {
+                // Wyświetlanie przycisków dla każdej trasy
                 tours.forEach { tour ->
                     Button(
                         onClick = {
                             Log.d("Dialog", "Wybrano trasę: ${tour.name}")
-                            // Możesz dodać logikę dla wybranej trasy
+                            // Możesz dodać logikę dla wybranej trasy tutaj
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -203,15 +154,20 @@ fun MyDialog(onDismiss: () -> Unit, tours: List<Tour>) {
     )
 }
 
+
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
-    val dummyTours = listOf(
-        Tour(1, "Centra handlowe", emptyList()),
-        Tour(2, "UBB główne budynki", emptyList()),
-        Tour(3, "UBB pobliskie żabki", emptyList())
-    )
+    val context = LocalContext.current
+
+    // Tworzymy tymczasowy MapView do podglądu
+    val dummyMapView = remember {
+        MapView(context).apply {
+            setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
+        }
+    }
+
     Map_OSMTheme {
-        MainScreen(dummyTours)
+        MainScreen(dummyMapView) // Przekazujemy tymczasowy MapView
     }
 }
