@@ -47,16 +47,66 @@ class MainActivity : ComponentActivity() {
 
         checkLocationPermission()
 
-        setContent {
-            Map_OSMTheme {
-                MainScreen(mapView, listOf(
-                    Tour(1, "Centra handlowe", emptyList()),
-                    Tour(2, "UBB główne budynki", emptyList()),
-                    Tour(3, "UBB pobliskie żabki", emptyList())
-                ))
+        // Zawsze pobieraj trasy z serwera przy starcie aplikacji
+        fetchAndCacheTours { tours ->
+            if (tours.isEmpty()) {
+                val cachedTours = readCachedTours()
+                if (cachedTours != null && cachedTours.isNotEmpty()) {
+                    renderMainScreen(cachedTours) // Załaduj dane z pamięci podręcznej
+                } else {
+                    renderMainScreen(emptyList()) // Pokaż pustą listę lub komunikat o braku danych
+                }
+            } else {
+                renderMainScreen(tours)
             }
         }
 
+    }
+
+
+    private fun renderMainScreen(tours: List<Tour>) {
+        setContent {
+            Map_OSMTheme {
+                MainScreen(mapView, tours)
+            }
+        }
+    }
+
+
+
+    private fun fetchAndCacheTours(onDataLoaded: (List<Tour>) -> Unit) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = ApiClient.service.getTours().execute()
+                if (response.isSuccessful) {
+                    val tours = response.body() ?: emptyList()
+
+                    // Zapisz dane w pamięci podręcznej (opcjonalnie)
+                    val cacheFile = File(cacheDir, "tours_cache.json")
+                    cacheFile.writeText(Gson().toJson(tours))
+                    Log.d("Cache", "Trasy zapisane w pamięci podręcznej.")
+
+                    // Przekaż dane do UI
+                    launch(Dispatchers.Main) { onDataLoaded(tours) }
+                } else {
+                    Log.e("Network", "Błąd pobierania danych: ${response.code()} - ${response.message()}")
+                    launch(Dispatchers.Main) { onDataLoaded(emptyList()) } // Wyślij pustą listę w przypadku błędu
+                }
+            } catch (e: Exception) {
+                Log.e("Network", "Błąd sieci: ${e.message}")
+                launch(Dispatchers.Main) { onDataLoaded(emptyList()) } // Wyślij pustą listę w przypadku błędu
+            }
+        }
+    }
+
+    private fun readCachedTours(): List<Tour>? {
+        val cacheFile = File(cacheDir, "tours_cache.json")
+        return if (cacheFile.exists()) {
+            val cachedData = cacheFile.readText()
+            Gson().fromJson(cachedData, Array<Tour>::class.java).toList()
+        } else {
+            null
+        }
     }
 
     private fun checkLocationPermission() {
@@ -135,7 +185,7 @@ fun MyDialog(onDismiss: () -> Unit, tours: List<Tour>) {
                     Button(
                         onClick = {
                             Log.d("Dialog", "Wybrano trasę: ${tour.name}")
-                            // Możesz dodać logikę dla wybranej trasy tutaj
+                            // Dodaj logikę dla wybranej trasy, np. zaznaczenie punktów na mapie
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -153,7 +203,6 @@ fun MyDialog(onDismiss: () -> Unit, tours: List<Tour>) {
         }
     )
 }
-
 
 @Preview(showBackground = true)
 @Composable

@@ -16,7 +16,6 @@ retrofitgson = "com.squareup.retrofit2:converter-gson:2.9.0"
 gson = "com.google.code.gson:gson:2.10.1"
 lifecycle = "androidx.lifecycle:lifecycle-runtime-ktx:2.6.1"
 
-
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
