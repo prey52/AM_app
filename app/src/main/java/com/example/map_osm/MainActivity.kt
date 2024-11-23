@@ -96,10 +96,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun addWaypointsToMap(tour: Tour) {
-        // Nie usuwaj nakładek, tylko dodaj nowe
-        val locationOverlayExists = mapView.overlays.any { it is MyLocationNewOverlay }
+        // Usuń istniejące markery z mapy
+        mapView.overlays.removeIf { it is org.osmdroid.views.overlay.Marker }
 
-        // Dodaj punkty trasy
+        // Dodaj nowe punkty trasy jako markery
         tour.waypoints.forEach { waypoint ->
             val geoPoint = GeoPoint(waypoint.latitude, waypoint.longitude)
             val marker = org.osmdroid.views.overlay.Marker(mapView).apply {
@@ -109,14 +109,15 @@ class MainActivity : ComponentActivity() {
             mapView.overlays.add(marker)
         }
 
-        // Upewnij się, że nakładka lokalizacji jest dodana, jeśli jej jeszcze nie ma
-        if (!locationOverlayExists) {
+        // Upewnij się, że nakładka lokalizacji pozostaje na mapie
+        if (!mapView.overlays.contains(locationOverlay)) {
             mapView.overlays.add(locationOverlay)
         }
 
         // Odśwież mapę
         mapView.invalidate()
     }
+
 
 
     private fun checkLocationPermission() {
