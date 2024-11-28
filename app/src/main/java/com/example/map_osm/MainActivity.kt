@@ -59,6 +59,46 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun fetchRoute(start: GeoPoint, end: GeoPoint, onRouteFetched: (List<GeoPoint>) -> Unit) {
+        val startCoord = "${start.longitude},${start.latitude}"
+        val endCoord = "${end.longitude},${end.latitude}"
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = OpenRouteServiceClient.service.getRoute(
+                    apiKey = "5b3ce3597851110001cf6248073ab13db5f744daaf6f53d2900363c4", // Replace with your ORS API key
+                    start = startCoord,
+                    end = endCoord
+                ).execute()
+
+                if (response.isSuccessful) {
+                    val routeCoordinates = response.body()?.features?.firstOrNull()?.geometry?.coordinates
+                    if (routeCoordinates != null) {
+                        val geoPoints = routeCoordinates.map { GeoPoint(it[1], it[0]) } // Convert to GeoPoint
+                        launch(Dispatchers.Main) {
+                            onRouteFetched(geoPoints)
+                        }
+                    }
+                } else {
+                    Log.e("ORS", "Failed to fetch route: ${response.errorBody()?.string()}")
+                }
+            } catch (e: Exception) {
+                Log.e("ORS", "Error fetching route: ${e.message}")
+            }
+        }
+    }
+
+    private fun addRouteToMap(routePoints: List<GeoPoint>) {
+        val polyline = org.osmdroid.views.overlay.Polyline().apply {
+            setPoints(routePoints)
+            color = android.graphics.Color.BLUE
+            width = 5f
+        }
+        mapView.overlays.add(polyline)
+        mapView.invalidate()
+    }
+
+
     private fun renderMainScreen(tours: List<Tour>) {
         setContent {
             Map_OSMTheme {
@@ -96,27 +136,36 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun addWaypointsToMap(tour: Tour) {
-        // Usuń istniejące markery z mapy
-        mapView.overlays.removeIf { it is org.osmdroid.views.overlay.Marker }
+        // Clear existing overlays
+        mapView.overlays.clear()
 
-        // Dodaj nowe punkty trasy jako markery
-        tour.waypoints.forEach { waypoint ->
-            val geoPoint = GeoPoint(waypoint.latitude, waypoint.longitude)
+        // Plot markers for each waypoint
+        val waypoints = tour.waypoints.map { GeoPoint(it.latitude, it.longitude) }
+        waypoints.forEach { waypoint ->
             val marker = org.osmdroid.views.overlay.Marker(mapView).apply {
-                position = geoPoint
-                title = waypoint.description
+                position = waypoint
+                title = "Waypoint: ${waypoint.latitude}, ${waypoint.longitude}"
             }
             mapView.overlays.add(marker)
         }
 
-        // Upewnij się, że nakładka lokalizacji pozostaje na mapie
+        // Fetch and draw routes between consecutive waypoints
+        lifecycleScope.launch {
+            for (i in 0 until waypoints.size - 1) {
+                fetchRoute(waypoints[i], waypoints[i + 1]) { route ->
+                    addRouteToMap(route)
+                }
+            }
+        }
+
+        // Add the location overlay back
         if (!mapView.overlays.contains(locationOverlay)) {
             mapView.overlays.add(locationOverlay)
         }
 
-        // Odśwież mapę
         mapView.invalidate()
     }
+
 
 
 
