@@ -218,8 +218,6 @@ fun MyDialog(onDismiss: () -> Unit, tours: List<Tour>, onTourSelected: (Tour) ->
     )
 }
 
-
-
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
