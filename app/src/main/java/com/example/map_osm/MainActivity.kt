@@ -136,35 +136,47 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun addWaypointsToMap(tour: Tour) {
-        // Clear existing overlays
+        // Clear existing overlays (except for the location overlay, which is already added)
         mapView.overlays.clear()
 
-        // Plot markers for each waypoint
-        val waypoints = tour.waypoints.map { GeoPoint(it.latitude, it.longitude) }
-        waypoints.forEach { waypoint ->
-            val marker = org.osmdroid.views.overlay.Marker(mapView).apply {
-                position = waypoint
-                title = "Waypoint: ${waypoint.latitude}, ${waypoint.longitude}"
-            }
-            mapView.overlays.add(marker)
-        }
+        // Get the user's current location
+        val userLocation = locationOverlay.myLocation
+        if (userLocation != null) {
+            // Start the route from the user's current location
+            val waypoints = listOf(GeoPoint(userLocation.latitude, userLocation.longitude)) +
+                    tour.waypoints.map { GeoPoint(it.latitude, it.longitude) }
 
-        // Fetch and draw routes between consecutive waypoints
-        lifecycleScope.launch {
-            for (i in 0 until waypoints.size - 1) {
-                fetchRoute(waypoints[i], waypoints[i + 1]) { route ->
-                    addRouteToMap(route)
+            // Plot markers for each waypoint (excluding the user's location, as it already has an arrow)
+            waypoints.drop(1).forEach { waypoint ->  // Drop the user's location from the list
+                val marker = org.osmdroid.views.overlay.Marker(mapView).apply {
+                    position = waypoint
+                    title = "Waypoint: ${waypoint.latitude}, ${waypoint.longitude}"
+                }
+                mapView.overlays.add(marker)
+            }
+
+            // Fetch and draw routes between consecutive waypoints
+            lifecycleScope.launch {
+                for (i in 0 until waypoints.size - 1) {
+                    fetchRoute(waypoints[i], waypoints[i + 1]) { route ->
+                        addRouteToMap(route)
+                    }
                 }
             }
-        }
 
-        // Add the location overlay back
-        if (!mapView.overlays.contains(locationOverlay)) {
-            mapView.overlays.add(locationOverlay)
-        }
+            // Keep the location overlay (arrow) on the map, ensuring it's not removed
+            if (!mapView.overlays.contains(locationOverlay)) {
+                mapView.overlays.add(locationOverlay)
+            }
 
-        mapView.invalidate()
+            mapView.invalidate()
+        } else {
+            // Handle case where user's location is unavailable
+            Log.e("LocationError", "Unable to fetch user's location")
+        }
     }
+
+
 
 
 
@@ -192,8 +204,8 @@ class MainActivity : ComponentActivity() {
     private fun setupMapWithLocation() {
         lifecycleScope.launch(Dispatchers.Main) {
             locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this@MainActivity), mapView).apply {
-                enableMyLocation()
-                enableFollowLocation()
+                enableMyLocation()  // Get the user's location
+                enableFollowLocation()  // Keep the map focused on the user's location
             }
             mapView.overlays.add(locationOverlay)
         }
