@@ -5,7 +5,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object ApiClient {
     // private const val BASE_URL = "http://192.168.1.2:5098" //PC
-    private const val BASE_URL = "http://172.25.100.4:5098" //VM
+    private const val BASE_URL = "http://172.18.34.107:5098" //VM
 
     val service: TourApiService by lazy {
         Retrofit.Builder()

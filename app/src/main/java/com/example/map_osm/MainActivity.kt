@@ -26,12 +26,18 @@ import androidx.core.app.ActivityCompat
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import androidx.compose.ui.tooling.preview.Preview
-
+import org.osmdroid.views.overlay.Marker
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.lifecycle.Lifecycle
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var mapView: MapView
     private lateinit var locationOverlay: MyLocationNewOverlay
+
+    private var currentWaypointIndex = 0
+    private var currentTour: Tour? = null
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +62,116 @@ class MainActivity : ComponentActivity() {
             } else {
                 renderMainScreen(tours)
             }
+        }
+    }
+
+    private fun startTour(tour: Tour) {
+        currentTour = tour
+        currentWaypointIndex = 0
+        navigateToNextWaypoint()
+    }
+
+    private fun navigateToNextWaypoint() {
+        val tour = currentTour ?: return // Return if tour is null
+
+        if (currentWaypointIndex >= tour.waypoints.size) {
+            Log.d("Navigation", "Tour completed!")
+            return
+        }
+
+        val currentWaypoint = tour.waypoints.getOrNull(currentWaypointIndex) // Safely get the waypoint
+        if (currentWaypoint == null) {
+            Log.e("Navigation", "Invalid waypoint index: $currentWaypointIndex")
+            return
+        }
+
+        val userLocation = locationOverlay.myLocation
+        if (userLocation != null) {
+            val startPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
+            val endPoint = GeoPoint(currentWaypoint.latitude, currentWaypoint.longitude)
+
+            // Clear existing overlays
+            mapView.overlays.clear()
+
+            // Add a marker for the waypoint
+            val marker = Marker(mapView).apply {
+                position = endPoint
+                title = currentWaypoint.description ?: "Waypoint"
+            }
+            mapView.overlays.add(marker)
+
+            // Fetch and display the route
+            fetchRoute(startPoint, endPoint) { route ->
+                addRouteToMap(route)
+            }
+
+            // Keep the location overlay on the map
+            if (!mapView.overlays.contains(locationOverlay)) {
+                mapView.overlays.add(locationOverlay)
+            }
+
+            mapView.invalidate()
+
+            // Monitor user proximity to the waypoint
+            monitorProximityToWaypoint(currentWaypoint)
+        } else {
+            Log.e("LocationError", "Unable to fetch user's location")
+        }
+    }
+
+
+    private fun monitorProximityToWaypoint(waypoint: Waypoint) {
+        val proximityRadiusMeters = 50.0
+        lifecycleScope.launch {
+            while (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                val userLocation = locationOverlay.myLocation
+                if (userLocation != null) {
+                    val userPoint = GeoPoint(userLocation.latitude, userLocation.longitude)
+                    val waypointPoint = GeoPoint(waypoint.latitude, waypoint.longitude)
+
+                    val distance = userPoint.distanceToAsDouble(waypointPoint)
+                    Log.d("ProximityDebug", "Distance to waypoint: $distance meters")
+                    if (distance <= proximityRadiusMeters) {
+                        Log.d("ProximityDebug", "Within proximity radius.")
+                        showWaypointReachedDialog(waypoint)
+                        break // Exit the loop when the condition is met
+                    }
+                } else {
+                    Log.e("ProximityDebug", "User location is null. Retrying...")
+                }
+                kotlinx.coroutines.delay(2000) // Retry after 2 seconds
+            }
+        }
+    }
+
+
+
+
+
+    private fun showWaypointReachedDialog(waypoint: Waypoint) {
+        Log.d("DialogDebug", "Attempting to show dialog for waypoint: ${waypoint.description}")
+        runOnUiThread {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("You've reached ${waypoint.description ?: "Waypoint"}")
+                .setMessage("Proceeding to the next point...")
+                .setPositiveButton("OK") { _, _ ->
+                    Log.d("DialogDebug", "User confirmed waypoint dialog.")
+                    moveToNextWaypoint()
+                }
+                .show()
+        }
+    }
+
+
+
+
+    private fun moveToNextWaypoint() {
+        val tour = currentTour ?: return // Ensure the tour is not null
+        if (currentWaypointIndex < tour.waypoints.size - 1) {
+            currentWaypointIndex++
+            navigateToNextWaypoint()
+        } else {
+            Log.d("Navigation", "All waypoints completed.")
         }
     }
 
@@ -88,6 +204,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+
     private fun addRouteToMap(routePoints: List<GeoPoint>) {
         val polyline = org.osmdroid.views.overlay.Polyline().apply {
             setPoints(routePoints)
@@ -99,13 +217,17 @@ class MainActivity : ComponentActivity() {
     }
 
 
+
     private fun renderMainScreen(tours: List<Tour>) {
         setContent {
             Map_OSMTheme {
-                MainScreen(mapView, tours, ::addWaypointsToMap)  // Przekazanie funkcji
+                MainScreen(mapView, tours) { tour ->
+                    startTour(tour)
+                }
             }
         }
     }
+
 
     private fun fetchAndCacheTours(onDataLoaded: (List<Tour>) -> Unit) {
         lifecycleScope.launch(Dispatchers.IO) {
@@ -134,6 +256,7 @@ class MainActivity : ComponentActivity() {
             null
         }
     }
+
 
     private fun addWaypointsToMap(tour: Tour) {
         // Clear existing overlays (except for the location overlay, which is already added)
@@ -176,11 +299,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
-
-
-
-
     private fun checkLocationPermission() {
         if (ActivityCompat.checkSelfPermission(
                 this,
@@ -193,23 +311,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) {
                 setupMapWithLocation()
             } else {
+                Log.e("Permission", "Location permission denied")
             }
         }
 
+
     private fun setupMapWithLocation() {
-        lifecycleScope.launch(Dispatchers.Main) {
-            locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this@MainActivity), mapView).apply {
-                enableMyLocation()  // Get the user's location
-                enableFollowLocation()  // Keep the map focused on the user's location
-            }
-            mapView.overlays.add(locationOverlay)
+        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this), mapView).apply {
+            enableMyLocation()
+            enableFollowLocation()
+        }
+        mapView.overlays.add(locationOverlay)
+
+        if (locationOverlay.myLocation == null) {
+            Log.e("LocationError", "Location not available. Ensure GPS is enabled.")
         }
     }
+
+
 }
 
 
@@ -294,4 +419,3 @@ fun DefaultPreview() {
         MainScreen(dummyMapView, emptyList(), onTourSelected = {})
     }
 }
-

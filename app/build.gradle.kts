@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.retrofitgson)
     implementation(libs.gson)
     implementation(libs.lifecycle)
+    implementation(libs.material)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

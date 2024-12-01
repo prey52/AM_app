@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Map_OSM" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Use a Material Components theme -->
+    <style name="Theme.Map_OSM" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <!-- You can optionally customize the colors if needed -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+
 </resources>
